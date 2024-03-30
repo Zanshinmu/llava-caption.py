@@ -1,6 +1,6 @@
 # llava-caption.py
 ## Automatically captions a directory of text files containing prompts
-## and correspondig PNG images using the llava 1.6 model
+## and corresponding PNG images using the llava 1.6 model
 
 # Installation Guide
 
@@ -68,7 +68,6 @@ This will return you to your system's default Python environment.
 
 By following these steps, you'll have a clean, isolated environment for your Python project, with all the necessary dependencies installed.
 
-]
 # Caveats
 
 - The current huggingface implementation does not currently use MPS due to a bug
@@ -80,8 +79,7 @@ By following these steps, you'll have a clean, isolated environment for your Pyt
 
 The `llava-caption.py` script can be used as follows:
 
-  ```
-- Process a folder of images:
+- Process a directory of images and prompt files:
   ```bash
   python3 llava-caption.py /path/to/image/folder/
   ```
