@@ -90,7 +90,7 @@ For example, to set it to use GPU 0:
 
 ```bash
 export TORCH_DEVICE="cuda:0"
-
+```
 
 # Caveats
 
