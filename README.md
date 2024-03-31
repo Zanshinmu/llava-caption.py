@@ -68,6 +68,30 @@ This will return you to your system's default Python environment.
 
 By following these steps, you'll have a clean, isolated environment for your Python project, with all the necessary dependencies installed.
 
+# Setting `TORCH_DEVICE` Environment Variable for PyTorch
+
+When working with PyTorch, it's often necessary to specify the device on which tensors are allocated. This can be particularly important when dealing with GPUs for acceleration. PyTorch provides the `torch.device` class to handle this.
+
+By setting the `TORCH_DEVICE` environment variable, you can conveniently specify the default device for PyTorch operations without having to modify your script each time.
+
+## Setting up `TORCH_DEVICE`
+
+Follow these steps to set up the `TORCH_DEVICE` environment variable:
+
+### 1. Determine the Device
+
+Decide on the device you want to use. This could be a CPU or a specific GPU.
+
+### 2. Set `TORCH_DEVICE`
+
+Set the `TORCH_DEVICE` environment variable to specify the desired device. You can do this in your terminal or shell script.
+
+For example, to set it to use GPU 0:
+
+```bash
+export TORCH_DEVICE="cuda:0"
+
+
 # Caveats
 
 - The current huggingface implementation does not currently use MPS due to a bug
