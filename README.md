@@ -6,8 +6,6 @@
 
 This guide provides instructions for setting up the necessary requirements for `llava-caption.py`
 
-Sure, here's a description you can use for your GitHub README.md:
-
 ---
 
 ## Setting Up Python Virtual Environment and Installing Dependencies
