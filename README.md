@@ -1,6 +1,6 @@
 # llava-caption.py
 ## Automatically captions a directory of text files containing prompts
-## and corresponding PNG images using the llava 1.6 model
+## and corresponding PNG images using the llava multimodal model
 
 # Installation Guide
 
