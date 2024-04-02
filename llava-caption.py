@@ -60,7 +60,6 @@ class HFModel:
             low_cpu_mem_usage=True,
             device_map=self.device,
             temperature = TEMPERATURE,
-            verbose = LOGGING
         )
         self.processor = LlavaNextProcessor.from_pretrained(HF_MODEL_PATH)
         self.processor.tokenizer.padding_side = "left"
