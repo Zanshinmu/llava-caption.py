@@ -1,12 +1,26 @@
 # llava-caption.py
 ## Automatically captions a directory of text files containing prompts
 ## and corresponding PNG images using the llava multimodal model
+___
+Use case: You have a large number of images you intend to use for a training set, but the images were rendered with generative AI so many of the features in the prompts are missing from the images, which makes for bad training.  Manual captioning is too time-consuming.  Enter llava-caption.py which has higher quality than BLIP with the basic processsors, and near-manual quality with the DualModel processor.
+___
+
+## DualModel *experimental*
+Two-model processing, Llava 1.5 and Mixtral. Mixtral is running on Ollama, Llava on LLama C++ Python
+Mixtral parses the prompt and queries LLava for each element then Mixtral constructs a caption from the responses.
+Why Ollama?  Two instances of Llama C++ python do not work.  Ollama works fine even though it has a llama c++ back-end.
+DualModel is being released as experimental: it is slow and has a tendency to go off-course over time,
+but that may be fixable with grammar and optimizations. 
 
 # Installation Guide
 
 This guide provides instructions for setting up the necessary requirements for `llava-caption.py`
 
 ---
+## Installing Ollama 
+Ollama can be downloaded and installed for various architectures and operating systems 
+**https://ollama.com/download
+___
 
 ## Setting Up Python Virtual Environment and Installing Dependencies
 
@@ -97,8 +111,9 @@ The current options are:
     OLModel  - Process with Ollama application
     HFModel  - Process with Huggingface Transformers
     LCPModel - Process with Llama C++ python bindings
+    DualModel - Process with dual models, mixtral with ollama, llava with Llama C++ python
 
-## Setting up `LLAVA_PROCESSOR`
+## Setting `LLAVA_PROCESSOR` Environment Variable
 
 Follow these steps to set up the `LLAVA_PROCESSOR` environment variable:
 
@@ -115,17 +130,72 @@ For example, to set it to use Ollama:
 ```bash
 export LLAVA_PROCESSOR="OLModel"
 ```
+## Setting `OLLAMA_REMOTEHOST` Environment Variable
+
+The script allows you to select the IP address of the Ollama host.  Default is localhost. 
+
+## Setting `OLLAMA_REMOTEHOST` Environment Variable
+
+Follow these steps to set up the `OLLAMA_REMOTEHOST` environment variable:
+
+### 1. Determine the address of the host
+
+Decide on the host running Ollama you want to use. 
+
+### 2. Set `OLLAMA_REMOTEHOST`
+
+Set the `OLLAMA_REMOTEHOST` environment variable to specify the desired processor. You can do this in your terminal or shell script.
+
+For example, to set it to use Ollama on 192.168.1.118:
+
+```bash
+export OLLAMA_REMOTEHOST="192.168.1.118:11434"
+```
+
+## Setting `SYSTEM_LOGGING` Environment Variable
+
+The SYSTEM_LOGGING environment variable enables console messages from the models which you may need for debugging on your system. 
+
+Follow these steps to set up the `SYSTEM_LOGGING` environment variable:
+
+### 2. Set `SYSTEM_LOGGING`
+
+Set the `SYSTEM_LOGGING` environment variable to 'True'. You can do this in your terminal or shell script.
+
+For example:
+
+```bash
+export SYSTEM_LOGGING="True"
+```
+## Setting `LOGGING` Environment Variable
+
+The LOGGING environment variable enables console messages from the script which you may need for debugging on your system. 
+
+Follow these steps to set up the `LOGGING` environment variable:
+
+### 2. Set `LOGGING`
+
+Set the `LOGGING` environment variable to 'True'. You can do this in your terminal or shell script.
+
+For example:
+
+```bash
+export LOGGING="True"
+```
+
 
 # Caveats
 
 - The appropriate LLava models will be automatically downloaded using huggingface-hub, or with Ollama.
-    This can take some time. 
-- OLModel assumes you have Ollama installed locally, but will eventually support remote Ollama hosts
-- The current HFModel implementation does not use MPS on Apple Silicon due to a bug in LLava
+    This can take some time and disk space.  The models in the script have been carefully selected for performance and resource use.
+- OLModel assumes you have Ollama installed locally by default but can use a remote host via OLLAMA_REMOTEHOST
+- The current HFModel implementation does not use MPS on Apple Silicon due to a bug in LLava 1.6
 - HFModel defaults to CPU.  See above for how to specify your device with env variables. 
 - The memory requirements are high and it takes a lot of CPU to run the model with HFModel in CPU mode
 - The script assumes you have already preproccessed the PNG files in the target directory to extract the prompts to text files with the same names. 
-- The script will overwrite the text files with the generated captions
+- The script will overwrite the prompt text files in the target directory with the generated captions
+- DualModel is the most accurate but requires at least 64GB of Unified Memory on a Mac, and as much GPU as you can give it. 
+  However, it is possible to run the LLava model locally and the Mixtral model on a remote host via Ollama. (see OLLAMA_REMOTEHOST)
 
 ## Usage
 
