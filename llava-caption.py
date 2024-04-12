@@ -5,8 +5,8 @@ Description: Tool for automatically captionong a directory of text files contain
 and corresponding PNG images using the llava multimodal model
 
 Author: David "Zanshinmu" Van de Ven
-Date: 4-9-2023
-Version: 0.6
+Date: 4-11-2024
+Version: 0.61
 
 As of now, huggingface transformers and llama-cpp-python are working, with
 hf transformers falling back to CPU on Apple Silicon due to a LLava bug.
@@ -47,10 +47,10 @@ MODEL = "LCPModel"
 
 # System prompt: You may want to do something different, but we attempt to limit
 # model to only the words that appear in the prompt text
-SYSTEM_PROMPT = "Describe the elements in the image using the quoted words only:"
+SYSTEM_PROMPT = "Describe the image following this style:"
 
 # Temperature: Go higher if you want the output to be more creative
-TEMPERATURE = 0.6
+TEMPERATURE = 0.0
 
 # Prompt text Preprocessor defaults to off
 PREPROCESSOR = bool(ast.literal_eval(os.environ.get('PREPROCESSOR', "False")))
