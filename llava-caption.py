@@ -5,8 +5,8 @@ Description: Tool for automatically captionong a directory of text files contain
 and corresponding PNG images using the llava multimodal model
 
 Author: David "Zanshinmu" Van de Ven
-Date: 4-11-2024
-Version: 0.61
+Date: 4-16-2024
+Version: 0.63
 
 As of now, huggingface transformers and llama-cpp-python are working, with
 hf transformers falling back to CPU on Apple Silicon due to a LLava bug.
@@ -22,7 +22,7 @@ from PIL import Image
 from ollama import Client, pull
 from tqdm import tqdm
 import pandas as pd
-from io import StringIO
+import json
 import ollama
 import subprocess
 import torch
@@ -125,12 +125,14 @@ class OllModel(object):
 
     def llm_completion(self, system, text, label, json_format=False):
         # First create the instructions
-        instruct = f"{system}\n {label}'{text}'"
-        settings = ollama.Options(num_predict=1024, seed=31337, temperature=0.1)
+        settings = ollama.Options(num_predict=1024, seed=31337, temperature=0.0)
         # Format can only be json so set if we want it to be json
+        json_header = "Respond only in JSON with the response string named 'response':"
         if json_format:
+            instruct = f"{json_header}{system}\n {label}'{text}'"
             response = self.client.generate(self.my_model, instruct, options=settings, format="json")["response"]
         else:
+            instruct = f"{system}\n {label}'{text}'"
             response = self.client.generate(self.my_model, instruct, options=settings)["response"]
 
         return response
@@ -266,15 +268,17 @@ class DualModel:
     def __init__(self):
         llava_repo = "PsiPi/liuhaotian_llava-v1.5-13b-GGUF"
         # Using a 13B llava to minimize hallucination
-        clip_model = "mmproj-model-Q5_0.gguf"
-        llava_model = "llava-v1.5-13b-Q5_K_M.gguf"
+        clip_model = "mmproj-model-Q4_0.gguf"
+        llava_model = "llava-v1.5-13b-Q4_0.gguf"
         self.llava = LCPModel(llava_repo, clip_model, llava_model)
         # Using a known good Mixtral from Ollama
         mixtral_ollama = "mixtral:8x7b-instruct-v0.1-q5_0"
         self.llm = OllModel(mixtral_ollama)
 
     def strip_text(self, input):
-        text = input.translate(str.maketrans('', '', string.digits))
+        # Remove newlines
+        stripped = input.replace("\n", "")
+        text = stripped.translate(str.maketrans('', '', string.digits))
         response = text.translate(str.maketrans('', '', string.punctuation))
         return response
 
@@ -284,59 +288,95 @@ class DualModel:
         choices = message['choices'][0]
         response = choices['message']['content']
         return response
-
+        
+    def identify_subject(self, e,  context):
+        instruction = (f"Follow instructions and respond in json.\n"
+                       f"1. Find the owner of '{e}' in the context text. Is it a man, woman, object or background of the image?\n"
+                       f"2. Use 2 words or less from the context text to identify the owner of {e}. \n"
+                       f"3. Respond with only the requested result. Return only two words in json response.\n"
+                       )
+        s = self.llm_completion(instruction, context, "context:", json_format=True)
+        j = json.loads(s)
+        for key in j:
+            if key != 'response':
+                if LOGGING:
+                    print (j, key)
+            else:
+                subject=j[key]
+                if LOGGING:
+                    print (f"Subject of '{e}' is {subject}\n")
+                
+        return subject
+        
     def image_to_base64_data_uri(self, file_path):
         with open(file_path, "rb") as img_file:
             base64_data = base64.b64encode(img_file.read()).decode('utf-8')
         return f"data:image/png;base64,{base64_data}"
 
-    def llm_completion(self, prompt, system, label="text:"):
+    def llm_completion(self, prompt, system, label="text:", json_format=False):
         # Using our instance of OLModel to invoke the LLM
         # Add system tags if necessary
         system = f"[INST]{system}[/INST]"
-        output = self.llm.llm_completion(system, prompt, label)
+        if json_format:
+            output = self.llm.llm_completion(system, prompt, label, json_format=json)
+        else:
+            output = self.llm.llm_completion(system, prompt, label)
+
         return output
 
     def elements_completion(self, text):
         # Prompt for list of elements from image prompt
-        instruction = (f"Follow these instructions consistently to complete the task:\n"
-                       f"1. Construct a list of comma-separated elements from the element text.\n"
-                       f"2. An element is an object, person, adjective, action or description from the element text.\n"
-                       f"3. Do not modify elements. Use identical words as element text. Do not create new elements.\n"
-                       f"4. Each property, action, or description of an object or person must be a separate element.\n"
-                       f"5. Each element must only be added once. Do not number elements.\n"
-                       f"6. Use only the element text. Do not use instructions as elements.\n"
-                       f"7. Do not comment, note or explain.  Do not produce any text but the elements.\n"
+        instruction = (f"Follow these instructions to complete the task:\n"
+                       f"1. Compile a list of comma-separated elements from the element text.\n"
+                       f"2. Organize the elements by subject and description or action of that subject. \n"
+                       f"3. Use identical words to element text. Use 'man' or 'woman' instead of a name.\n"
+                       f"4. Each property, action, or description of a subject must be a separate element.\n"
+                       f"5. Each element must only be added once. Do not number the list.\n"
+                       f"7. Respond only with the comma-separated list of elements.\n"
                        )
         # First we instruct the LLM based on the image prompt text
         list_response = self.llm_completion(instruction, text, "Element text:")
         # Turn the list into a pandas dataframe
-        elements = list(list_response.split(','))
+        clean_text = list_response.replace("\n", "")
+        elements = list(clean_text.split(','))
         df = pd.DataFrame(elements, columns=['Element'])
         if LOGGING:
             print(f"\nElements:\n{elements}\n")
         return df
 
     def questions_completion(self, elements):
+        # First, prepare context to work from
+        context = ', '.join(elements['Element'])
         # Prompt for list of questions from elements
         q_column = "Question"
-        instruction = (f"Follow these instructions to complete the task:\n"
-                       f"1. Process the element text into a question.\n"
-                       f"2. Example question: 'Is <element> visible?' Use the example as a template.\n"
-                       f"3. The question must require a yes/no answer to verify element is in an image\n"
-                       f"4. Uwe only the exact element text to create the question..\n"
-                       f"5. Do not add instructions. Do not use the words 'text' or 'element' in question.\n "
-                       f"6. Respond only with a question. Do not comment, explain or note.\n"
+        instruction = (f"Perform the task without remarks.\n"
+                       f"Adhere strictly to these guidelines:\n"
+                       f"1. Process the element text into a simple, direct question relating to the subject.\n"
+                       f"2. Example question: 'Is <subject> <element text> in the image?'\n"
+                       f"3. The question must require a yes/no answer to verify element is visible in an image\n"
+                       f"4. Use exact element text to create the question. Try to use correct grammar.\n"
+                       f"5. Use the subject and the element text for the question.\n "
+                       f"6. Respond only with a simple question.\n"
                        )
         print(f"Generating Questions from Elements.\n")
         questions = []
         for index in tqdm(elements.index):
             e = elements.iloc[index]["Element"]
+            subject = self.identify_subject(e, context)
             # Generate question, insert item into new column in dataframe
-            response = self.llm_completion(instruction, e, "element text:")
-            questions.append(response)
+            # Using JSON to enforce
+            response = self.llm_completion(instruction, e, f"subject: {subject} element text:", json_format=True)
+            j = json.loads(response)
+            for key in j:
+                if key != 'response':
+                    if LOGGING:
+                        print (j, key)
+                else:
+                    questions.append(j[key])
+                        
         # Merge the liat with the dataframe
         elements[q_column] = questions
+        
         if LOGGING:
             print(f"Questions: {elements}")
         return elements
@@ -369,7 +409,7 @@ class DualModel:
                        f"5. Do not modify the text or add anything, just change the structure."
                        f"6. Do not leave any of the text elements out or modify them."
                        f"7. If the subject is a person, use appropriate pronouns and nouns."
-                       f"8. Make sure the list is comma-separated. No punctuation or numbers should be used.\n"
+                       f"8. Make sure the list is comma-separated and not numbered.\n"
 
                        )
         response = self.llm_completion(instruction, visible)
@@ -386,6 +426,8 @@ class DualModel:
         questions = self.questions_completion(elements)
         # Process list of questions with LLava model
         visible = self.query_llava_completion(questions, image_path)
+        # sanitize the string
+        visible = self.strip_text(visible)
         if SECONDARY_CAPTION:
             # Now, synthesize the visible elements into a caption
             caption = self.caption_completion(visible)
@@ -404,7 +446,10 @@ def preprocess(text):
     new_text = re.sub(pattern, 'photo of', text)
     new_text = re.sub('Cybergirl', 'woman', new_text)
     new_text = re.sub('Cyberpunk man', 'man', new_text)
-    new_text = re.sub(', photograph, film, professional, highly detailed', '', new_text)
+    new_text = re.sub('photograph', '', new_text)
+    new_text = re.sub('film', '', new_text)
+    new_text = re.sub('professional', '', new_text)
+    new_text = re.sub('highly detailed', '', new_text)
     return new_text
 
     # image must be resized for model
