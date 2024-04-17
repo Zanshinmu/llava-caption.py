@@ -5,8 +5,8 @@ Description: Tool for automatically captionong a directory of text files contain
 and corresponding PNG images using the llava multimodal model
 
 Author: David "Zanshinmu" Van de Ven
-Date: 4-16-2024
-Version: 0.63
+Date: 4-17-2024
+Version: 0.64
 
 As of now, huggingface transformers and llama-cpp-python are working, with
 hf transformers falling back to CPU on Apple Silicon due to a LLava bug.
@@ -22,7 +22,7 @@ from PIL import Image
 from ollama import Client, pull
 from tqdm import tqdm
 import pandas as pd
-import json
+import json_repair
 import ollama
 import subprocess
 import torch
@@ -126,7 +126,7 @@ class OllModel(object):
     def llm_completion(self, system, text, label, json_format=False):
         # First create the instructions
         settings = ollama.Options(num_predict=1024, seed=31337, temperature=0.0)
-        # Format can only be json so set if we want it to be json
+        # Ollama format can only be json so set if we want it to be json
         json_header = "Respond only in JSON with the response string named 'response':"
         if json_format:
             instruct = f"{json_header}{system}\n {label}'{text}'"
@@ -296,7 +296,7 @@ class DualModel:
                        f"3. Respond with only the requested result. Return only two words in json response.\n"
                        )
         s = self.llm_completion(instruction, context, "context:", json_format=True)
-        j = json.loads(s)
+        j = json_repair.loads(s)
         for key in j:
             if key != 'response':
                 if LOGGING:
@@ -318,7 +318,7 @@ class DualModel:
         # Add system tags if necessary
         system = f"[INST]{system}[/INST]"
         if json_format:
-            output = self.llm.llm_completion(system, prompt, label, json_format=json)
+            output = self.llm.llm_completion(system, prompt, label, json_format='json')
         else:
             output = self.llm.llm_completion(system, prompt, label)
 
@@ -366,7 +366,7 @@ class DualModel:
             # Generate question, insert item into new column in dataframe
             # Using JSON to enforce
             response = self.llm_completion(instruction, e, f"subject: {subject} element text:", json_format=True)
-            j = json.loads(response)
+            j = json_repair.loads(response)
             for key in j:
                 if key != 'response':
                     if LOGGING:
