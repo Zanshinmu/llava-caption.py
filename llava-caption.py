@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 """
 Script Name: llava-caption.py
-Description: Tool for automatically captionong a directory of text files containing prompts
+Description: Tool for automatically captioning a directory of text files containing prompts
 and corresponding PNG images using the llava multimodal model
 
 Author: David "Zanshinmu" Van de Ven
-Date: 4-17-2024
-Version: 0.64
+Date:11-11-2024
+Version: 0.70
 
 As of now, huggingface transformers and llama-cpp-python are working, with
 hf transformers falling back to CPU on Apple Silicon due to a LLava bug.
@@ -19,9 +19,11 @@ from llama_cpp import Llama
 from llama_cpp.llama_chat_format import Llava15ChatHandler
 from huggingface_hub import hf_hub_download
 from PIL import Image
-from ollama import Client, pull
+from ollama import Client, pull, generate
 from tqdm import tqdm
 import pandas as pd
+from pathlib import Path
+import json
 import json_repair
 import ollama
 import subprocess
@@ -34,6 +36,7 @@ import base64
 import tempfile
 import ast
 
+
 ''' Here we set the class to use for processing
     Environment variable LLAVA_PROCESSOR can also be used
 
@@ -43,7 +46,7 @@ import ast
     LCPModel - Process with Llama C++ python bindings
     DualModel - Process with Llama C++ python bindings with Mixtral and Llava collaborating
 '''
-MODEL = "LCPModel"
+MODEL = "VisionModel"
 
 # System prompt: You may want to do something different, but we attempt to limit
 # model to only the words that appear in the prompt text
@@ -53,7 +56,7 @@ SYSTEM_PROMPT = "Describe the image following this style:"
 TEMPERATURE = 0.0
 
 # Prompt text Preprocessor defaults to off
-PREPROCESSOR = bool(ast.literal_eval(os.environ.get('PREPROCESSOR', "False")))
+PREPROCESSOR = bool(ast.literal_eval(os.environ.get('PREPROCESSOR', "True")))
 # Secondary caption processing with DualModel, defaults to off
 SECONDARY_CAPTION = bool(ast.literal_eval(os.environ.get('SECONDARY_CAPTION', "False")))
 
@@ -436,24 +439,100 @@ class DualModel:
             # Just return Visible which is minimalist but accurate
             return visible
 
+"""
+Single model processing, Llama 3.2 Vision
+The model parses the prompt and queries the image for each element
+then constructs a natural language caption from the responses.
+The output of this one is intended for FLux/SD3 models.
+Uses Ollama for processing. 
+"""
+
+
+class VisionModel:
+    def __init__(self):
+        # Llama 3.2 vision instruct
+        self.model_ollama = "llama3.2-vision:11b-instruct-q8_0"
+        self.options = {'temperature': 0, 'num_predict':160}
+        self.llm = OllModel(self.model_ollama)
+
+
+    def strip_text(self, input):
+        # Remove newlines
+        stripped = input.replace("\n", "")
+        
+        # Remove digits
+        text = stripped.translate(str.maketrans('', '', string.digits))
+        
+        # Custom punctuation string excluding hyphen (-), period (.), and comma (,)
+        custom_punctuation = string.punctuation.replace("-", "").replace(".", "").replace(",", "")
+        
+        # Remove all punctuation except for hyphens, periods, and commas
+        response = text.translate(str.maketrans('', '', custom_punctuation))
+        
+        return response
+
+    def llm_completion(self, prompt, image_path, format='json', system = "You are an image captioning assistant who accurately and concisely describes the visual elements present in an image, including objects, colors, and spatial relationships, focusing only on what is visible, without embellishment or metaphor. You never refer to the image directly, you only describe the contents. You do not interpret the image, you describe it objectively." ):
+        image = base64.b64encode(Path(image_path).read_bytes()).decode()
+        response = generate(self.model_ollama,prompt,images=[image],stream=False, format=format, options=self.options, system=system)
+        return response['response']
+        
+    def secondary_completion(self, prompt, image_path):
+        instruction = (f"Generate a simple caption using the following text to guide your description. Check against the image to insure accuracy:'{prompt}'\n"
+                       )
+        caption = self.llm_completion(instruction, image_path, format='')
+        return self.strip_text(caption)
+
+
+    def caption_completion(self, prompt, image_path):
+        prompt = self.strip_text(prompt)
+        instruction = (f"Compare the following text with the image and remove non-visible elements: '{prompt}'\n"
+                       f"Create a JSON object named 'text' containing a single string with the revised text.\n"
+                       f"Be concise and use the same words and style as the text.\n"
+                      )
+        # instruct the LLM based on the image prompt text
+        if LOGGING:
+            print(f"\nInstruction:\n{instruction}\n")
+        response = self.llm_completion(instruction, image_path)
+        if LOGGING:
+            print(f"\nElements:\n{response}\n")
+        return response
+
+    # Here is the heart of the VisionModel Magic
+    def process_image(self, prompt, image_path):
+        # Create list of elements
+        caption = self.caption_completion(prompt, image_path)
+        j = json_repair.loads(caption)
+        try:
+            caption = j['text']
+        except:
+            caption = self.caption_completion(prompt, image_path)
+            j = json_repair.loads(caption)
+            caption = j['text']
+            
+        if SECONDARY_CAPTION:
+            return self.secondary_completion(caption, image_path)
+        else:
+            return caption
+
 
 # prep prompt text for processing
 # regex, format re.sub('<text to find>','<text to replace>')
 def preprocess(text):
-    if not PREPROCESSOR:
+    if PREPROCESSOR:
+        pattern = r'(photo of\s\w+),'
+        new_text = re.sub(pattern, 'photo of', text)
+        new_text = re.sub('Cybergirl', 'woman', new_text)
+        new_text = re.sub('Cyberpunk man', 'man', new_text)
+        new_text = re.sub('photograph', '', new_text)
+        new_text = re.sub('film', '', new_text)
+        new_text = re.sub('BREAK', '', new_text)
+        new_text = re.sub('professional', '', new_text)
+        new_text = re.sub('highly detailed', '', new_text)
+        return new_text
+    else:
         return text
-    pattern = r'(photo of\s\w+),'
-    new_text = re.sub(pattern, 'photo of', text)
-    new_text = re.sub('Cybergirl', 'woman', new_text)
-    new_text = re.sub('Cyberpunk man', 'man', new_text)
-    new_text = re.sub('photograph', '', new_text)
-    new_text = re.sub('film', '', new_text)
-    new_text = re.sub('professional', '', new_text)
-    new_text = re.sub('highly detailed', '', new_text)
-    return new_text
 
-    # image must be resized for model
-
+# image must be resized for model
 
 def resize_image(image):
     # Within model limits and preserves aspect ratio
@@ -499,10 +578,11 @@ def main(directory):
             if file.endswith('.txt'):
                 filepath = os.path.join(root, file)
                 with open(filepath, 'r') as f:
-                    text = preprocess(f.read())
+                    text = f.read()
+                    p = preprocess(text)
                     image_path = read_corresponding_png(filepath)
                     if image_path:
-                        response = ModelClass.process_image(text, image_path)
+                        response = ModelClass.process_image(p, image_path)
                         processed += 1
                         with open(filepath, 'w') as f:
                             f.write(response)

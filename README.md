@@ -12,6 +12,12 @@ Why Ollama?  Two instances of Llama C++ python do not work.  Ollama works fine e
 DualModel is being released as experimental: it is slow and has a tendency to go off-course over time,
 but that may be fixable with grammar and optimizations. 
 
+## VisionModel *experimental*
+One-model processing, Llama3.2-Vision running on Ollama.  A modern vision model proves ideal for this purpose. 
+The model parses the prompt against the image, leaving out parts of the prompt which aren't validated to exist in the image.
+Accuracy is higher than DualModel, system requirements are lower, and it's faster.
+But wait, there's more!  SECONDARY_CAPTION works beautifully with VisionModel to generate a natural language caption more suitable to training Flux or SD3.  Typically it runs faster than DualModel even with the additional processing.  
+
 # Installation Guide
 
 This guide provides instructions for setting up the necessary requirements for `llava-caption.py`
